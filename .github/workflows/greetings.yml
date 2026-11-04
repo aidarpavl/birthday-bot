@@ -1,0 +1,57 @@
+name: Поздравления
+
+on:
+  schedule:
+    # Время UTC: каждый час с 09:17 до 21:17 в Казахстане.
+    # Уже отправленное не повторяется; новые нажатия Start обрабатываются сразу.
+    - cron: "17 4-16 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Пробный запуск: ничего не отправлять"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: greetings
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-sender.txt
+
+      - name: Отправка
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          SHEET_GID: ${{ secrets.SHEET_GID }}
+          MOBIZON_API_KEY: ${{ secrets.MOBIZON_API_KEY }}
+          MOBIZON_SENDER: ${{ secrets.MOBIZON_SENDER }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          INSTAGRAM_SESSION: ${{ secrets.INSTAGRAM_SESSION }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            python send_greetings.py --dry-run
+          else
+            python send_greetings.py
+          fi
+
+      - name: Сохранить журнал
+        if: always()
+        run: |
+          git add sent_log.csv telegram_users.csv
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Журнал отправок и подключения к боту"
+          git pull --rebase
+          git push
